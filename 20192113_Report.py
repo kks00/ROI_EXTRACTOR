@@ -44,15 +44,17 @@ def mode_changer(image, next_mode): # 입력된 키에 따라 모드를 변경�
 
 
 
-def save_image(mask): # 이미지 파일로 저장하는 함수
+def save_image(mask, left_top, right_bottom): # 이미지 파일로 저장하는 함수
     global input_image, curr_file_index
 
     orig_b, orig_g, orig_r = cv2.split(input_image)
     roi_b, roi_g, roi_r = cv2.bitwise_and(orig_b, mask), cv2.bitwise_and(orig_g, mask), cv2.bitwise_and(orig_r, mask)
     roi = cv2.merge((roi_b, roi_g, roi_r)) # 원본 이미지와 MASK AND연산을 통하여 이미지에서 ROI만 추출
 
-    cv2.namedWindow("roi", cv2.WINDOW_AUTOSIZE) # 추출된 roi 표시
-    cv2.imshow("roi", roi)
+    roi = roi[left_top[1]: right_bottom[1], left_top[0]: right_bottom[0]] # ROI 잘라내기
+
+    # cv2.namedWindow("roi", cv2.WINDOW_AUTOSIZE) # 추출된 roi 표시, 제출 전 삭제해야 함
+    # cv2.imshow("roi", roi)
 
     new_file_name = "{}{:04}.jpg".format(file_name_prefix, curr_file_index)
     cv2.imwrite(new_file_name, roi)
@@ -85,6 +87,10 @@ def draw_ellipse(image, mask, start_pos, end_pos, color): # 타원 그리기 함
     if mask is not None:
         cv2.ellipse(mask, center, axes, 0, 0, 360, (255, 255, 255), -1) # mask에 내부가 칠해진 타원 그리기
 
+    left_top = (center_x - dist_x // 2, center_y - dist_y // 2)
+    right_bottom = (center_x + dist_x // 2, center_y + dist_y // 2)
+    return (left_top, right_bottom)
+
 last_pointed_pos = (-1, -1)
 ellipse_mask = None
 def ellipse_drawer(mouse_type, pos): # 타원 모드 처리 함수
@@ -95,10 +101,10 @@ def ellipse_drawer(mouse_type, pos): # 타원 모드 처리 함수
         ellipse_mask = np.zeros(drawing_board.shape[:2], dtype="uint8") # 타원 mask 생성
 
     elif mouse_type == 1: # 좌클릭 땠을 시
-        draw_ellipse(drawing_board, ellipse_mask, last_pointed_pos, pos, (0, 0, 255)) # 클릭 시작점부터 클릭 땐 위치까지의 확정된 원 그리기 + 마스크 완성
+        left_top, right_bottom = draw_ellipse(drawing_board, ellipse_mask, last_pointed_pos, pos, (0, 0, 255)) # 클릭 시작점부터 클릭 땐 위치까지의 확정된 원 그리기 + 마스크 완성
         render_window(drawing_board)
 
-        save_image(ellipse_mask)
+        save_image(ellipse_mask, left_top, right_bottom)
 
         last_pointed_pos = (-1, -1)
         ellipse_mask = None
@@ -175,7 +181,11 @@ def polygon_drawer(pos):
     if is_polygon_completed:
         polygon_mask = set_mask(polygon_mask)
 
-        save_image(polygon_mask)
+        x_points = [i[0] for i in points]
+        y_points = [i[1] for i in points]
+        left_top = (min(x_points), min(y_points))
+        right_bottom = (max(x_points), max(y_points))
+        save_image(polygon_mask, left_top, right_bottom)
 
         points = []
         polygon_mask = None
