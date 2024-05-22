@@ -1,13 +1,10 @@
 # 20192113 김기수 영상정보처리 Report
-# Polygon 마스크 처리에 DFS 탐색을 사용하여 Polygon 완성 후 이미지 저장까지 2초 가량 소요될 수 있습니다.
 
 
 
 import cv2
 import numpy as np
 import math
-import sys
-sys.setrecursionlimit(640*480+1) # DFS 탐색을 위한 최대 재귀 한도 설정
 
 file_name_prefix = "kgs" # 파일 이름의 첫 세글자로 사용할 이니셜
 curr_file_index = 1
@@ -72,9 +69,6 @@ def save_image(mask, left_top, right_bottom): # 이미지 파일로 저장하는
 
     roi = roi[left_top[1]: right_bottom[1], left_top[0]: right_bottom[0]] # ROI 영역만 잘라내기
 
-    # cv2.namedWindow("roi", cv2.WINDOW_AUTOSIZE) # 추출된 roi 표시, 제출 전 삭제해야 함
-    # cv2.imshow("roi", roi)
-
     new_file_name = "{}{:04}.jpg".format(file_name_prefix, curr_file_index) # 이니셜_인덱스4자리 형태의 파일 이름 지정
     cv2.imwrite(new_file_name, roi)
 
@@ -122,7 +116,7 @@ def ellipse_drawer(mouse_type, pos): # 타원 모드 처리 함수
         ellipse_mask = np.zeros(drawing_board.shape[:2], dtype="uint8") # 타원 mask 생성
 
     elif mouse_type == 1: # 좌클릭 땠을 시
-        left_top, right_bottom = draw_ellipse(drawing_board, ellipse_mask, last_pointed_pos, pos, (0, 0, 255)) # 클릭 시작점부터 클릭 땐 위치까지의 확정된 원 그리기 + 마스크 완성
+        left_top, right_bottom = draw_ellipse(drawing_board, ellipse_mask, last_pointed_pos, pos, (255, 255, 0)) # 클릭 시작점부터 클릭 땐 위치까지의 확정된 원 그리기 + 마스크 완성
         render_window(drawing_board)
 
         save_image(ellipse_mask, left_top, right_bottom)
@@ -132,7 +126,7 @@ def ellipse_drawer(mouse_type, pos): # 타원 모드 처리 함수
 
     elif mouse_type == 2: # 드래그 중일 시
         dragging_image = drawing_board.copy() # 확정되지 않은 원을 그리기 위해 현재 이미지 복사
-        draw_ellipse(dragging_image, None, last_pointed_pos, pos, (0, 0, 255)) # 클릭 시작점부터 현재 커서 위치까지 원 그리기
+        draw_ellipse(dragging_image, None, last_pointed_pos, pos, (255, 255, 0)) # 클릭 시작점부터 현재 커서 위치까지 원 그리기
         render_window(dragging_image)
         del dragging_image
 
@@ -154,22 +148,9 @@ def is_invalid_polygon(poses): # 시계 반대방향인지 필터링하는 함�
         return True
     return False
 
-def fill_mask(mask, pos, visited): # DFS 탐색을 이용하여 테두리 바깥쪽 전부 하얀색으로 변경
-    cy, cx = pos
-    for oy, ox in ((-1, 0), (0, -1), (1, 0), (0, 1)):
-        ny, nx = cy + oy, cx + ox
-
-        if 0 <= ny < mask.shape[0] and 0 <= nx < mask.shape[1]:
-            if mask[ny][nx] > 0:
-                continue
-            if (ny, nx) not in visited:
-                visited.add((ny, nx))
-                mask[ny][nx] = 255
-                fill_mask(mask, (ny, nx), visited)
-def set_mask(mask): # 테두리만 그려져 있는 mask의 내부를 채우는 함수
-    fill_mask(mask, (0, 0), set())
-    mask = cv2.bitwise_not(mask) # 테두리 바깥쪽을 하얀색으로 변경한 마스크를 반전
-    return mask
+def set_mask(mask): # 만들어진 다각형의 mask를 생성하는 함수
+    global points
+    cv2.fillPoly(mask, np.array([points[:-1]]), (255, 255, 255)) # 채워진 하얀 다각형을 그려서 mask 생성
 
 def render_points(image, color, thickness, lineType): # points의 점들을 차례대로 이은 도형 렌더링
     for i in range(len(points) - 1):
@@ -191,15 +172,15 @@ def polygon_drawer(pos):
         polygon_mask = np.zeros(drawing_board.shape[:2], dtype="uint8")
         return
     if len(points) >= 3:
-        if (is_invalid_polygon(points[-3:])): # 마지막 세 점이 다각형의 조건을 만족하지 않으면 무시
-            points.pop()
-            return
-
         if get_dist(first_pos, pos) <= 20: # 첫 점과의 거리가 20이하일 때
-
             check_points = points[-2:]
             check_points.append(points[1])
             if (is_invalid_polygon(check_points)): # 첫 두 점과 마지막 점이 다각형의 조건을 만족하지 않을 때 롤백
+                points.pop()
+                points.pop() # 맨 끝 두 점 버리기
+
+            check_points = points[-3:]
+            if (is_invalid_polygon(check_points)): # 마지막 세 점이 다각형의 조건을 만족하지 않을 때 롤백
                 points.pop()
                 points.pop() # 맨 끝 두 점 버리기
 
@@ -207,6 +188,10 @@ def polygon_drawer(pos):
                 points.pop()
                 points.append(first_pos)
                 is_polygon_completed = True
+        elif (is_invalid_polygon(points[-3:])): # 첫 점과의 거리가 20 이상이고, 마지막 세 점이 다각형의 조건을 만족하지 않으면 무시
+            points.pop()
+            return
+
 
     clear_drawing_board()
     render_points(drawing_board, (0, 0, 255), 2, cv2.LINE_AA)
@@ -214,7 +199,7 @@ def polygon_drawer(pos):
 
     if is_polygon_completed:
         render_points(polygon_mask, (255, 255, 255), 1, None)
-        polygon_mask = set_mask(polygon_mask)
+        set_mask(polygon_mask)
 
         x_points = [i[0] for i in points]
         y_points = [i[1] for i in points]
